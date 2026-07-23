@@ -4,7 +4,7 @@ Ko‘p ijarali (multi-tenant) mebel katalogi uchun backend.
 
 - FastAPI + SQLAlchemy 2 (async) + PostgreSQL
 - Public katalog API va demo admin API
-- Frontend alohida repoda: `catalog-frontend`
+- Frontend alohida repoda: [catalog-frontend](https://github.com/boburbekt/catalog-frontend)
 
 ## 1. Ishga tushirish (Docker)
 
