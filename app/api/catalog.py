@@ -9,11 +9,53 @@ from app.core.config import get_settings
 from app.core.rate_limit import order_rate_limiter
 from app.db.session import AsyncSessionLocal, get_db
 from app.models import Business, Category, Order, OrderItem, Product, normalize_source
-from app.schemas.catalog import CatalogOut, OrderCreate, OrderCreated, ProductOut, VisitCreate
+from app.schemas.catalog import (
+    CatalogOut,
+    OrderCreate,
+    OrderCreated,
+    ProductOut,
+    SitemapOut,
+    SitemapProduct,
+    SitemapShop,
+    VisitCreate,
+)
 from app.services.analytics import record_visit
 from app.services.telegram import build_order_message, send_order_notification
 
 router = APIRouter(prefix="/public", tags=["public catalog"])
+
+
+@router.get("/sitemap", response_model=SitemapOut)
+async def get_sitemap(db: AsyncSession = Depends(get_db)) -> SitemapOut:
+    """SEO uchun: faol do‘kon slug'lari va ko‘rinadigan mahsulot slug'lari + `updated_at`.
+
+    Absolute URL va XML Nuxt tomonida quriladi — bu endpoint faqat xom ma'lumot beradi.
+    """
+    shop_rows = (
+        await db.execute(
+            select(Business.slug, Business.updated_at)
+            .where(Business.is_active.is_(True))
+            .order_by(Business.slug)
+        )
+    ).all()
+
+    # Faqat faol do‘konlarning ko‘rinadigan mahsulotlari (inactive do‘kon mahsulotlari chiqmaydi).
+    product_rows = (
+        await db.execute(
+            select(Business.slug, Product.slug, Product.updated_at)
+            .join(Business, Product.business_id == Business.id)
+            .where(Business.is_active.is_(True), Product.is_visible.is_(True))
+            .order_by(Business.slug, Product.slug)
+        )
+    ).all()
+
+    return SitemapOut(
+        shops=[SitemapShop(slug=slug, updated_at=updated_at) for slug, updated_at in shop_rows],
+        products=[
+            SitemapProduct(shop_slug=shop_slug, slug=slug, updated_at=updated_at)
+            for shop_slug, slug, updated_at in product_rows
+        ],
+    )
 
 
 @router.get("/shops/{shop_slug}", response_model=CatalogOut)

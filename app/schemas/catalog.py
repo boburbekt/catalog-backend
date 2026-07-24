@@ -367,3 +367,24 @@ class StatsOut(BaseModel):
     by_source: list[SourceCount]
     by_day: list[DayStat]
     top_products: list[TopProduct]
+
+
+class SitemapShop(BaseModel):
+    slug: str
+    updated_at: datetime
+
+
+class SitemapProduct(BaseModel):
+    shop_slug: str
+    slug: str
+    updated_at: datetime
+
+
+class SitemapOut(BaseModel):
+    """SEO sitemap uchun xom ma'lumot: faol do‘konlar va ko‘rinadigan mahsulotlar.
+
+    Absolute URL'lar va XML Nuxt server route'ida (`sitemap.xml`) quriladi.
+    """
+
+    shops: list[SitemapShop]
+    products: list[SitemapProduct]
