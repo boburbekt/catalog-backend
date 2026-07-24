@@ -1,8 +1,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
+from app.core.phone import InvalidPhoneError, normalize_phone
 from app.models import Availability, OrderStatus
 
 
@@ -66,6 +67,25 @@ class OrderCreate(BaseModel):
     customer_phone: str = Field(min_length=7, max_length=40)
     quantity: int = Field(default=1, ge=1, le=99)
     comment: str | None = Field(default=None, max_length=1000)
+    # Aloqaga rozilik majburiy — `False` yoki yuborilmasa 422.
+    consent: bool
+    # Honeypot: haqiqiy foydalanuvchi ko‘rmaydigan yashirin maydon; bot to‘ldirsa bloklanadi.
+    honeypot: str | None = Field(default=None, max_length=200)
+
+    @field_validator("customer_phone")
+    @classmethod
+    def _normalize_phone(cls, value: str) -> str:
+        try:
+            return normalize_phone(value)
+        except InvalidPhoneError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("consent")
+    @classmethod
+    def _require_consent(cls, value: bool) -> bool:
+        if value is not True:
+            raise ValueError("Buyurtma uchun rozilik majburiy")
+        return value
 
 
 class OrderCreated(BaseModel):
@@ -310,6 +330,16 @@ class AdminMeUpdate(BaseModel):
     notify_telegram_chat_id: int | None = None
 
 
+class VisitCreate(BaseModel):
+    """Public tashrif eventi. Barcha maydonlar ixtiyoriy: katalog tashrifida `product_id` bo‘lmaydi."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    product_id: int | None = None
+    source: str | None = Field(default=None, max_length=30)
+    path: str | None = Field(default=None, max_length=300)
+
+
 class SourceCount(BaseModel):
     source: str
     visits: int
@@ -322,9 +352,18 @@ class TopProduct(BaseModel):
     visits: int
 
 
+class DayStat(BaseModel):
+    date: str
+    visits: int
+    orders: int
+
+
 class StatsOut(BaseModel):
     days: int
     total_visits: int
     total_orders: int
+    total_products: int
+    new_orders: int
     by_source: list[SourceCount]
+    by_day: list[DayStat]
     top_products: list[TopProduct]

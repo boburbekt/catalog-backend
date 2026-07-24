@@ -36,6 +36,7 @@ uvicorn app.main:app --reload
 | `DATABASE_URL` | `postgresql+asyncpg://catalog:catalog_password@db:5432/mebel_catalog` | asyncpg drayveri majburiy |
 | `CORS_ORIGINS` | `http://localhost:3000` | vergul bilan ajratilgan ro‘yxat |
 | `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `mebel_catalog` / `catalog` / `catalog_password` | faqat compose'dagi `db` servisi uchun |
+| `ORDER_RATE_LIMIT_PER_MINUTE` | `5` | bitta IP daqiqasiga nechta buyurtma bera oladi (anti-spam) |
 
 ## 4. API
 
@@ -43,7 +44,8 @@ Public (katalog):
 
 - `GET /api/public/shops/{shop_slug}` — do‘kon + kategoriyalar + mahsulotlar (`?category=`, `?search=`)
 - `GET /api/public/shops/{shop_slug}/products/{product_slug}` — mahsulot tafsiloti
-- `POST /api/public/shops/{shop_slug}/orders` — buyurtma yuborish
+- `POST /api/public/shops/{shop_slug}/visits` — tashrif eventi (statistika; GET so‘rovlari tashrif yozmaydi)
+- `POST /api/public/shops/{shop_slug}/orders` — buyurtma yuborish (`consent` majburiy)
 
 Admin (demo, **autentifikatsiyasiz**):
 
@@ -66,7 +68,18 @@ docker compose down -v && docker compose up --build
 
 Barcha biznesga tegishli obyektlarda `business_id` mavjud va do‘kon har doim URL'dagi `slug` orqali aniqlanadi. Shu sababli bitta backend va bitta database ichida ko‘p do‘kon xavfsiz ajratiladi. Yangi endpoint qo‘shganda so‘rovni albatta `business_id` bo‘yicha cheklang.
 
-## 7. Keyingi ishlar
+## 7. Anti-spam (buyurtma tezligi cheklovi)
+
+Buyurtma endpointi oddiy **in-process** (jarayon ichidagi) rate limiter bilan himoyalangan: bitta IP
+uchun `ORDER_RATE_LIMIT_PER_MINUTE` (default 5) dan ko‘p buyurtma bo‘lsa `429` qaytadi. Bundan tashqari
+so‘rovda majburiy `consent: true` va yashirin **honeypot** maydoni tekshiriladi (bot to‘ldirsa `400`).
+
+> ⚠️ **Bir jarayon cheklovi.** Limiter holati faqat shu Python jarayonining xotirasida saqlanadi.
+> Bir nechta uvicorn worker yoki replika ishlatilsa, har biri o‘z hisobini yuritadi va cheklov global
+> bo‘lmaydi. Ishonchli, taqsimlangan cheklov uchun Redis kabi umumiy do‘kon kerak (MVP doirasida
+> ataylab qo‘shilmagan).
+
+## 8. Keyingi ishlar
 
 - Admin autentifikatsiyasi
 - Alembic migratsiyalari

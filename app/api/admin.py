@@ -26,6 +26,7 @@ from app.schemas.catalog import (
     CategoryDeleteResult,
     CategoryOut,
     CategoryUpdate,
+    DayStat,
     OrderListOut,
     OrderOut,
     OrderStatusUpdate,
@@ -445,7 +446,10 @@ async def get_stats(
     business: Business = Depends(get_current_business),
     db: AsyncSession = Depends(get_db),
 ) -> StatsOut:
-    since = datetime.now(UTC) - timedelta(days=days)
+    # Kalendar kunlariga tayanamiz: oxirgi `days` kun (bugun ham kiradi) yarim tunidan boshlab.
+    today = datetime.now(UTC).date()
+    start_date = today - timedelta(days=days - 1)
+    since = datetime(start_date.year, start_date.month, start_date.day, tzinfo=UTC)
 
     source_rows = (
         await db.execute(
@@ -462,6 +466,20 @@ async def get_stats(
         .where(Order.business_id == business.id, Order.created_at >= since)
     )
 
+    new_orders = await db.scalar(
+        select(func.count())
+        .select_from(Order)
+        .where(
+            Order.business_id == business.id,
+            Order.created_at >= since,
+            Order.status == OrderStatus.NEW,
+        )
+    )
+
+    total_products = await db.scalar(
+        select(func.count()).select_from(Product).where(Product.business_id == business.id)
+    )
+
     top_rows = (
         await db.execute(
             select(Product.id, Product.name, Product.slug, func.count(CatalogVisit.id).label("visits"))
@@ -473,12 +491,50 @@ async def get_stats(
         )
     ).all()
 
+    # by_day: har bir kun uchun tashrif va buyurtma sonini Python'da guruhlaymiz (DB-agnostik).
+    # Bo‘sh kunlar 0 bilan to‘ldiriladi.
+    visit_dates = (
+        await db.scalars(
+            select(CatalogVisit.created_at).where(
+                CatalogVisit.business_id == business.id, CatalogVisit.created_at >= since
+            )
+        )
+    ).all()
+    order_dates = (
+        await db.scalars(
+            select(Order.created_at).where(
+                Order.business_id == business.id, Order.created_at >= since
+            )
+        )
+    ).all()
+
+    visits_by_date: dict = {}
+    for created in visit_dates:
+        key = created.date()
+        visits_by_date[key] = visits_by_date.get(key, 0) + 1
+    orders_by_date: dict = {}
+    for created in order_dates:
+        key = created.date()
+        orders_by_date[key] = orders_by_date.get(key, 0) + 1
+
+    by_day = [
+        DayStat(
+            date=(day := start_date + timedelta(days=offset)).isoformat(),
+            visits=visits_by_date.get(day, 0),
+            orders=orders_by_date.get(day, 0),
+        )
+        for offset in range(days)
+    ]
+
     by_source = [SourceCount(source=source, visits=count) for source, count in source_rows]
     return StatsOut(
         days=days,
         total_visits=sum(item.visits for item in by_source),
         total_orders=total_orders or 0,
+        total_products=total_products or 0,
+        new_orders=new_orders or 0,
         by_source=by_source,
+        by_day=by_day,
         top_products=[
             TopProduct(id=row.id, name=row.name, slug=row.slug, visits=row.visits) for row in top_rows
         ],

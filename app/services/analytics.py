@@ -1,6 +1,5 @@
 import logging
 
-from fastapi import Request
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,25 +8,32 @@ from app.models import CatalogVisit, Product, normalize_source
 logger = logging.getLogger(__name__)
 
 
-async def track_visit(
-    request: Request,
+async def record_visit(
     db: AsyncSession,
+    *,
     business_id: int,
     product_id: int | None = None,
+    source: str | None = None,
+    path: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
-    """Ko‘rishni yozadi. Statistika hech qachon sahifani yiqitmasligi kerak, shuning uchun xatolar yutiladi."""
+    """Tashrifni yozadi va mahsulot bo‘lsa `view_count`ni atomik oshiradi.
+
+    Statistika hech qachon sahifani yiqitmasligi kerak — DB xatosi yutiladi, faqat log yoziladi.
+    Tenantga tegishlilik va ko‘rinuvchanlik tekshiruvi chaqiruvchi (endpoint)da bajariladi.
+    """
     try:
-        user_agent = request.headers.get("user-agent")
         db.add(
             CatalogVisit(
                 business_id=business_id,
                 product_id=product_id,
-                source=normalize_source(request.query_params.get("source")),
-                path=str(request.url.path)[:300],
+                source=normalize_source(source),
+                path=path[:300] if path else None,
                 user_agent=user_agent[:400] if user_agent else None,
             )
         )
         if product_id is not None:
+            # Atomik: `view_count = view_count + 1` bevosita DB'da bajariladi (race'siz).
             await db.execute(
                 update(Product)
                 .where(Product.id == product_id)

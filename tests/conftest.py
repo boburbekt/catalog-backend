@@ -15,6 +15,16 @@ from app.models import Business, Category, Product
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Har test toza limiter holatidan boshlanadi — tashrif hisoblari testlar orasida oqmaydi."""
+    from app.core.rate_limit import order_rate_limiter
+
+    order_rate_limiter.reset()
+    yield
+    order_rate_limiter.reset()
+
+
 @pytest.fixture
 async def session_factory():
     engine = create_async_engine(TEST_DATABASE_URL, poolclass=StaticPool, connect_args={"check_same_thread": False})

@@ -52,6 +52,7 @@ async def test_buyurtma_togri_business_id_ga_yoziladi(client, shops, db):
             "customer_name": "Jasurbek",
             "customer_phone": "+998901234567",
             "quantity": 2,
+            "consent": True,
         },
     )
     assert response.status_code == 201
@@ -75,6 +76,7 @@ async def test_boshqa_dokon_mahsulotiga_buyurtma_bermaydi(client, shops):
             "product_id": beta_product_id,
             "customer_name": "Jasurbek",
             "customer_phone": "+998901234567",
+            "consent": True,
         },
     )
     assert response.status_code == 404
@@ -90,6 +92,7 @@ async def test_telegram_ochirilganda_ham_buyurtma_201(client, shops, db):
             "product_id": catalog["products"][0]["id"],
             "customer_name": "Dilnoza",
             "customer_phone": "+998901112233",
+            "consent": True,
         },
     )
     assert response.status_code == 201
@@ -100,7 +103,8 @@ async def test_telegram_ochirilganda_ham_buyurtma_201(client, shops, db):
 
 
 async def test_notanish_source_direct_ga_tushadi(client, shops, db):
-    await client.get("/api/public/shops/alfa-mebel", params={"source": "yolgon-manba"})
+    # Tashrif endi explicit endpoint orqali yoziladi; notanish manba `direct`ga tushadi.
+    await client.post("/api/public/shops/alfa-mebel/visits", json={"source": "yolgon-manba"})
 
     from app.models import CatalogVisit
 

@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     super_admin_token: str = ""
     upload_dir: str = "uploads"
     max_upload_mb: int = 8
+    # Bitta IP uchun daqiqasiga ruxsat etilgan buyurtmalar soni (in-process anti-spam).
+    order_rate_limit_per_minute: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

@@ -5,10 +5,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
+from app.core.rate_limit import order_rate_limiter
 from app.db.session import AsyncSessionLocal, get_db
 from app.models import Business, Category, Order, OrderItem, Product, normalize_source
-from app.schemas.catalog import CatalogOut, OrderCreate, OrderCreated, ProductOut
-from app.services.analytics import track_visit
+from app.schemas.catalog import CatalogOut, OrderCreate, OrderCreated, ProductOut, VisitCreate
+from app.services.analytics import record_visit
 from app.services.telegram import build_order_message, send_order_notification
 
 router = APIRouter(prefix="/public", tags=["public catalog"])
@@ -17,7 +19,6 @@ router = APIRouter(prefix="/public", tags=["public catalog"])
 @router.get("/shops/{shop_slug}", response_model=CatalogOut)
 async def get_catalog(
     shop_slug: str,
-    request: Request,
     category: str | None = Query(default=None),
     search: str | None = Query(default=None, min_length=1, max_length=80),
     limit: int = Query(default=24, ge=1, le=100),
@@ -58,7 +59,7 @@ async def get_catalog(
         ).all()
     )
 
-    await track_visit(request, db, business_id=business.id)
+    # Tashrif bu yerda YOZILMAYDI — statistika endi faqat explicit `POST .../visits` orqali.
     return CatalogOut(business=business, products=products, total=total, limit=limit, offset=offset)
 
 
@@ -66,7 +67,6 @@ async def get_catalog(
 async def get_product(
     shop_slug: str,
     product_slug: str,
-    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Product:
     query = (
@@ -84,8 +84,48 @@ async def get_product(
     if not product:
         raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
 
-    await track_visit(request, db, business_id=product.business_id, product_id=product.id)
+    # Tashrif bu yerda YOZILMAYDI — `view_count` va tashrif explicit `POST .../visits` orqali.
     return product
+
+
+@router.post(
+    "/shops/{shop_slug}/visits",
+    status_code=status.HTTP_201_CREATED,
+)
+async def track_visit(
+    shop_slug: str,
+    payload: VisitCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Frontend explicit chaqiradigan tashrif eventi (katalog yoki mahsulot ochilganda bir marta)."""
+    business = await db.scalar(
+        select(Business).where(Business.slug == shop_slug, Business.is_active.is_(True))
+    )
+    if not business:
+        raise HTTPException(status_code=404, detail="Do‘kon topilmadi")
+
+    if payload.product_id is not None:
+        # Mahsulot shu tenantga tegishli va ko‘rinadigan bo‘lishi shart; aks holda 404 (cross-tenant leak yo‘q).
+        product = await db.scalar(
+            select(Product.id).where(
+                Product.id == payload.product_id,
+                Product.business_id == business.id,
+                Product.is_visible.is_(True),
+            )
+        )
+        if not product:
+            raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+
+    await record_visit(
+        db,
+        business_id=business.id,
+        product_id=payload.product_id,
+        source=payload.source,
+        path=payload.path,
+        user_agent=request.headers.get("user-agent"),
+    )
+    return {"status": "recorded"}
 
 
 async def _notify_order(order_id: int, chat_id: int | None, text: str, phone: str) -> None:
@@ -113,6 +153,19 @@ async def create_order(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
 ) -> OrderCreated:
+    # Honeypot: haqiqiy foydalanuvchi bu yashirin maydonni bo‘sh qoldiradi; to‘lgan bo‘lsa — bot.
+    if payload.honeypot:
+        raise HTTPException(status_code=400, detail="Buyurtma rad etildi")
+
+    # Anti-spam: bitta IP uchun jarayon ichidagi tezlik cheklovi (limit config orqali).
+    settings = get_settings()
+    client_ip = request.client.host if request.client else "unknown"
+    if not order_rate_limiter.allow(client_ip, settings.order_rate_limit_per_minute, 60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Juda ko‘p buyurtma yuborildi. Bir oz kuting.",
+        )
+
     business = await db.scalar(select(Business).where(Business.slug == shop_slug, Business.is_active.is_(True)))
     if not business:
         raise HTTPException(status_code=404, detail="Do‘kon topilmadi")
