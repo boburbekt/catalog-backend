@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -5,15 +6,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Business, Category, Product
 
+logger = logging.getLogger(__name__)
+
+# Faqat dev uchun: token oldindan ma'lum bo'lsa, admin paneliga kirish uchun uni qidirib o'tirmaysiz.
+# Prod do'konlari tokeni `POST /api/super/businesses` orqali tasodifiy generatsiya qilinadi.
+DEMO_ADMIN_TOKEN = "demo-admin-token"
+
 
 async def seed_demo(session: AsyncSession) -> None:
     existing = await session.scalar(select(Business).where(Business.slug == "demo-mebel"))
     if existing:
         return
 
+    logger.info("Demo do‘kon yaratilmoqda, admin token: %s", DEMO_ADMIN_TOKEN)
     business = Business(
         name="Demo Mebel",
         slug="demo-mebel",
+        admin_token=DEMO_ADMIN_TOKEN,
         phone="+998 90 123 45 67",
         telegram_username="demo_mebel",
         address="Farg‘ona shahri",

@@ -5,8 +5,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "Mebel Catalog API"
+    environment: str = "dev"
     database_url: str = "postgresql+asyncpg://catalog:catalog_password@localhost:5432/mebel_catalog"
     cors_origins: str = "http://localhost:3000"
+    public_site_url: str = "http://localhost:3000"
+    telegram_bot_token: str = ""
+    super_admin_token: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

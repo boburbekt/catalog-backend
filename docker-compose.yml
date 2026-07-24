@@ -18,8 +18,12 @@ services:
   backend:
     build: .
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-dev}
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://catalog:catalog_password@db:5432/mebel_catalog}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-http://localhost:3000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      SUPER_ADMIN_TOKEN: ${SUPER_ADMIN_TOKEN:-}
     ports:
       - "8000:8000"
     depends_on:
