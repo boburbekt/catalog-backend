@@ -1,0 +1,47 @@
+name: Backend CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: catalog
+          POSTGRES_PASSWORD: catalog_password
+          POSTGRES_DB: mebel_catalog
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U catalog -d mebel_catalog"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://catalog:catalog_password@localhost:5432/mebel_catalog
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python 3.12 o‘rnatish
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Dev bog‘liqliklarni o‘rnatish
+        run: pip install -e ".[dev]"
+
+      - name: Alembic migratsiyalar (upgrade head)
+        run: alembic upgrade head
+
+      - name: Testlar (pytest)
+        run: python -m pytest -q
+
+      - name: Kompilyatsiya tekshiruvi (compileall)
+        run: python -m compileall app
