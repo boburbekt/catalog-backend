@@ -1,8 +1,9 @@
+from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from app.models import Availability
+from app.models import Availability, OrderStatus
 
 
 class CategoryOut(BaseModel):
@@ -28,6 +29,8 @@ class ProductOut(BaseModel):
     sku: str | None = None
     image_url: str | None
     availability: Availability
+    position: int
+    is_visible: bool
     category: CategoryOut | None = None
 
 
@@ -69,7 +72,54 @@ class OrderCreated(BaseModel):
     message: str
 
 
+class OrderItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    product_name: str
+    quantity: int
+    unit_price: Decimal
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def line_total(self) -> Decimal:
+        return self.unit_price * self.quantity
+
+
+class OrderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    customer_name: str
+    customer_phone: str
+    comment: str | None
+    status: OrderStatus
+    source: str
+    created_at: datetime
+    notified_at: datetime | None
+    items: list[OrderItemOut]
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total(self) -> Decimal:
+        return sum((item.line_total for item in self.items), Decimal("0"))
+
+
+class OrderListOut(BaseModel):
+    orders: list[OrderOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class OrderStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: OrderStatus
+
+
 class AdminProductCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     category_id: int | None = None
     name: str = Field(min_length=2, max_length=180)
     slug: str = Field(min_length=2, max_length=180)
@@ -83,6 +133,36 @@ class AdminProductCreate(BaseModel):
     image_url: str | None = None
     availability: Availability = Availability.IN_STOCK
     position: int = 0
+
+
+class AdminProductUpdate(BaseModel):
+    """Mahsulotni qisman yangilash.
+
+    Handler `payload.model_dump(exclude_unset=True)` bilan ishlaydi: yuborilmagan maydon
+    tegilmaydi. Nullable maydonlar (`category_id`, `description`, `old_price`, `material`,
+    `dimensions`, `color`, `sku`, `image_url`) explicit `null` bilan tozalanadi.
+    `name`, `slug`, `price`, `availability`, `position`, `is_visible` turida `None` yo‘q —
+    ularning standart `None` qiymati faqat "yuborilmagan"ni bildiradi, `null` yuborilsa 422 bo‘ladi.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    category_id: int | None = None
+    name: str = Field(default=None, min_length=2, max_length=180)
+    slug: str = Field(
+        default=None, min_length=2, max_length=180, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    )
+    description: str | None = None
+    price: Decimal = Field(default=None, gt=0)
+    old_price: Decimal | None = Field(default=None, gt=0)
+    material: str | None = None
+    dimensions: str | None = None
+    color: str | None = Field(default=None, max_length=60)
+    sku: str | None = Field(default=None, max_length=60)
+    image_url: str | None = None
+    availability: Availability = Field(default=None)
+    position: int = Field(default=None, ge=0)
+    is_visible: bool = Field(default=None)
 
 
 class BusinessCreate(BaseModel):

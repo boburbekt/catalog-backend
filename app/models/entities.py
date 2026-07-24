@@ -136,7 +136,16 @@ class Order(TimestampMixin, Base):
     customer_name: Mapped[str] = mapped_column(String(120), nullable=False)
     customer_phone: Mapped[str] = mapped_column(String(40), nullable=False)
     comment: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String(30), default=OrderStatus.NEW.value, nullable=False)
+    status: Mapped[OrderStatus] = mapped_column(
+        SAEnum(
+            OrderStatus,
+            name="order_status",
+            native_enum=False,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        default=OrderStatus.NEW,
+        nullable=False,
+    )
     source: Mapped[str] = mapped_column(String(30), default=VisitSource.DIRECT.value, nullable=False)
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

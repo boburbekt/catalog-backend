@@ -39,7 +39,11 @@ async def test_mahsulot_token_egasining_dokoniga_yoziladi(client, shops, db):
 
 
 async def test_body_dagi_business_slug_etiborga_olinmaydi(client, shops, db):
-    """Eski `business_slug` maydoni endi sxemada yo‘q — yuborilsa ham e'tiborsiz qoladi."""
+    """`extra="forbid"` bilan noma'lum `business_slug` maydoni rad etiladi (422).
+
+    Tenant faqat token orqali aniqlanadi — so‘rov tanasidan do‘kon tanlab bo‘lmaydi va
+    bunday urinish jimgina e'tiborsiz qolmasdan, aniq xato bilan qaytariladi.
+    """
     response = await client.post(
         "/api/admin/products",
         headers={"X-Admin-Token": "beta-token"},
@@ -50,11 +54,10 @@ async def test_body_dagi_business_slug_etiborga_olinmaydi(client, shops, db):
             "price": "700000",
         },
     )
-    assert response.status_code == 201
+    assert response.status_code == 422
 
     product = await db.scalar(select(Product).where(Product.slug == "ogirlangan-divan"))
-    assert product.business_id == shops["beta"].id
-    assert product.business_id != shops["alfa"].id
+    assert product is None
 
 
 async def test_boshqa_dokon_kategoriyasini_biriktirib_bolmaydi(client, shops, db):
