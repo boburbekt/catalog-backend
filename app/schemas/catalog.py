@@ -12,6 +12,8 @@ class CategoryOut(BaseModel):
     id: int
     name: str
     slug: str
+    position: int
+    is_active: bool
 
 
 class ProductOut(BaseModel):
@@ -163,6 +165,34 @@ class AdminProductUpdate(BaseModel):
     availability: Availability = Field(default=None)
     position: int = Field(default=None, ge=0)
     is_visible: bool = Field(default=None)
+
+
+_CATEGORY_SLUG = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+
+
+class CategoryCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=120)
+    slug: str = Field(min_length=1, max_length=120, pattern=_CATEGORY_SLUG)
+    position: int = Field(default=0, ge=0)
+    is_active: bool = True
+
+
+class CategoryUpdate(BaseModel):
+    """Qisman yangilash. Yuborilgan maydonlar `null` bo‘la olmaydi (standart `None` = "yuborilmagan")."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default=None, min_length=1, max_length=120)
+    slug: str = Field(default=None, min_length=1, max_length=120, pattern=_CATEGORY_SLUG)
+    position: int = Field(default=None, ge=0)
+    is_active: bool = Field(default=None)
+
+
+class CategoryDeleteResult(BaseModel):
+    id: int
+    detached_products: int
 
 
 class BusinessCreate(BaseModel):

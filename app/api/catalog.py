@@ -26,7 +26,8 @@ async def get_catalog(
 ) -> CatalogOut:
     business_query = (
         select(Business)
-        .options(selectinload(Business.categories))
+        # Public katalogda faqat active kategoriyalar ko‘rsatiladi.
+        .options(selectinload(Business.categories.and_(Category.is_active.is_(True))))
         .where(Business.slug == shop_slug, Business.is_active.is_(True))
     )
     business = await db.scalar(business_query)
@@ -39,7 +40,9 @@ async def get_catalog(
     if category:
         product_query = product_query.join(Category)
         count_query = count_query.join(Category, Product.category_id == Category.id)
+        # Inactive kategoriya slug'i bilan ham public mahsulotlar chiqmasligi kerak.
         filters.append(Category.slug == category)
+        filters.append(Category.is_active.is_(True))
     if search:
         filters.append(Product.name.ilike(f"%{search}%"))
 

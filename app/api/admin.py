@@ -1,17 +1,29 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import get_settings
 from app.core.security import get_current_business
 from app.db.session import get_db
 from app.models import Business, CatalogVisit, Category, Order, OrderItem, OrderStatus, Product
+from app.services.images import (
+    ALLOWED_CONTENT_TYPES,
+    InvalidImageError,
+    build_webp,
+    remove_local_image,
+    save_webp,
+)
 from app.schemas.catalog import (
     AdminProductCreate,
     AdminProductUpdate,
+    CategoryCreate,
+    CategoryDeleteResult,
+    CategoryOut,
+    CategoryUpdate,
     OrderListOut,
     OrderOut,
     OrderStatusUpdate,
@@ -166,6 +178,168 @@ async def delete_product(
         raise HTTPException(status_code=409, detail=_ORDER_HISTORY)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/products/{product_id}/image", response_model=ProductOut)
+async def upload_product_image(
+    product_id: int,
+    file: UploadFile = File(...),
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> Product:
+    product = await db.scalar(
+        select(Product).where(Product.id == product_id, Product.business_id == business.id)
+    )
+    if product is None:
+        raise HTTPException(status_code=404, detail="Mahsulot topilmadi")
+
+    # content-type — birlamchi filtr, lekin unga yolg‘iz ishonmaymiz (haqiqiy tekshiruv Pillow'da).
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="Faqat JPEG, PNG yoki WebP qabul qilinadi")
+
+    settings = get_settings()
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    # Faqat `max_bytes + 1` o‘qiymiz: chegaradan oshsa xotirani to‘ldirmasdan darrov rad etamiz.
+    data = await file.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=413, detail=f"Rasm hajmi {settings.max_upload_mb} MB dan oshmasligi kerak"
+        )
+
+    try:
+        webp_bytes = build_webp(data)  # haqiqiy rasm ekanini tekshiradi + WebP'ga o‘tkazadi
+    except InvalidImageError:
+        raise HTTPException(status_code=400, detail="Yaroqli rasm fayli emas")
+
+    old_url = product.image_url
+    path, new_url = save_webp(webp_bytes, settings.upload_dir, business.id)
+
+    product.image_url = new_url
+    try:
+        await db.commit()
+    except SQLAlchemyError:
+        # DB xatosida yangi saqlangan fayl yetim qolmasligi uchun o‘chiriladi.
+        await db.rollback()
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=500, detail="Rasmni saqlab bo‘lmadi")
+
+    # Commit muvaffaqiyatli — eski lokal rasm endi almashtirildi, xavfsiz o‘chiramiz.
+    remove_local_image(old_url, settings.upload_dir)
+
+    query = select(Product).options(selectinload(Product.category)).where(Product.id == product.id)
+    return await db.scalar(query)  # type: ignore[return-value]
+
+
+@router.get("/categories", response_model=list[CategoryOut])
+async def list_categories(
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> list[Category]:
+    # Admin uchun active va inactive — hammasi position bo‘yicha.
+    query = (
+        select(Category)
+        .where(Category.business_id == business.id)
+        .order_by(Category.position, Category.id)
+    )
+    return list((await db.scalars(query)).all())
+
+
+@router.post("/categories", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
+async def create_category(
+    payload: CategoryCreate,
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> Category:
+    duplicate = await db.scalar(
+        select(Category.id).where(
+            Category.business_id == business.id, Category.slug == payload.slug
+        )
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail=_DUPLICATE_SLUG)
+
+    category = Category(
+        business_id=business.id,
+        name=payload.name,
+        slug=payload.slug,
+        position=payload.position,
+        is_active=payload.is_active,
+    )
+    db.add(category)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=_DUPLICATE_SLUG)
+    await db.refresh(category)
+    return category
+
+
+@router.patch("/categories/{category_id}", response_model=CategoryOut)
+async def update_category(
+    category_id: int,
+    payload: CategoryUpdate,
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> Category:
+    category = await db.scalar(
+        select(Category).where(
+            Category.id == category_id, Category.business_id == business.id
+        )
+    )
+    if category is None:
+        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
+
+    data = payload.model_dump(exclude_unset=True)
+    if "slug" in data and data["slug"] != category.slug:
+        duplicate = await db.scalar(
+            select(Category.id).where(
+                Category.business_id == business.id,
+                Category.slug == data["slug"],
+                Category.id != category.id,
+            )
+        )
+        if duplicate:
+            raise HTTPException(status_code=409, detail=_DUPLICATE_SLUG)
+
+    for field, value in data.items():
+        setattr(category, field, value)
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=_DUPLICATE_SLUG)
+    await db.refresh(category)
+    return category
+
+
+@router.delete("/categories/{category_id}", response_model=CategoryDeleteResult)
+async def delete_category(
+    category_id: int,
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> CategoryDeleteResult:
+    category = await db.scalar(
+        select(Category).where(
+            Category.id == category_id, Category.business_id == business.id
+        )
+    )
+    if category is None:
+        raise HTTPException(status_code=404, detail="Kategoriya topilmadi")
+
+    # Mahsulotlarni explicit ravishda kategoriyasiz qoldiramiz (FK SET NULL'ga tayanmasdan),
+    # shu bilan nechta mahsulot ajratilganini ham sanaymiz.
+    result = await db.execute(
+        Product.__table__.update()
+        .where(Product.category_id == category.id, Product.business_id == business.id)
+        .values(category_id=None)
+    )
+    detached = result.rowcount or 0
+
+    await db.delete(category)
+    await db.commit()
+    return CategoryDeleteResult(id=category_id, detached_products=detached)
 
 
 @router.get("/orders", response_model=OrderListOut)

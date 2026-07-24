@@ -24,6 +24,8 @@ services:
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-http://localhost:3000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       SUPER_ADMIN_TOKEN: ${SUPER_ADMIN_TOKEN:-}
+      UPLOAD_DIR: ${UPLOAD_DIR:-uploads}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-8}
     ports:
       - "8000:8000"
     depends_on:
@@ -31,6 +33,9 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
+      # Yuklangan rasmlar konteyner qayta ishga tushsa ham saqlanib qolishi uchun persistent volume.
+      - uploads_data:/app/uploads
 
 volumes:
   postgres_data:
+  uploads_data:

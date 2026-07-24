@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     public_site_url: str = "http://localhost:3000"
     telegram_bot_token: str = ""
     super_admin_token: str = ""
+    upload_dir: str = "uploads"
+    max_upload_mb: int = 8
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
