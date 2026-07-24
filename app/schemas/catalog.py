@@ -209,14 +209,105 @@ class BusinessCreate(BaseModel):
 
 
 class BusinessCreated(BaseModel):
-    """`admin_token` faqat shu javobda bir marta ko‘rsatiladi."""
+    """`admin_token` (xom token) faqat shu javobda bir marta qaytariladi — DB da faqat hash saqlanadi."""
+
+    id: int
+    name: str
+    slug: str
+    admin_token: str
+
+
+class TokenRotated(BaseModel):
+    """Token rotatsiyasi javobi: yangi xom token bir marta qaytariladi, eskisi darhol ishlamay qoladi."""
+
+    id: int
+    slug: str
+    admin_token: str
+
+
+_BUSINESS_SLUG = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
+
+
+class BusinessAdminOut(BaseModel):
+    """Super admin list/detail javobi. Token yoki hash bu yerda hech qachon chiqmaydi."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     name: str
     slug: str
-    admin_token: str
+    logo_url: str | None
+    phone: str | None
+    telegram_username: str | None
+    whatsapp: str | None
+    instagram: str | None
+    address: str | None
+    description: str | None
+    is_active: bool
+    notify_telegram_chat_id: int | None
+    created_at: datetime
+
+
+class SuperBusinessUpdate(BaseModel):
+    """Super admin biznesni qisman yangilaydi.
+
+    `model_dump(exclude_unset=True)` bilan ishlanadi: yuborilmagan maydon tegilmaydi.
+    Nullable maydonlar explicit `null` bilan tozalanadi; `name`/`slug`/`is_active` da
+    `None` "yuborilmagan"ni bildiradi, `null` yuborilsa 422.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default=None, min_length=2, max_length=160)
+    slug: str = Field(default=None, min_length=2, max_length=120, pattern=_BUSINESS_SLUG)
+    logo_url: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=40)
+    telegram_username: str | None = Field(default=None, max_length=80)
+    whatsapp: str | None = Field(default=None, max_length=40)
+    instagram: str | None = Field(default=None, max_length=80)
+    address: str | None = Field(default=None, max_length=300)
+    description: str | None = None
+    is_active: bool = Field(default=None)
+    notify_telegram_chat_id: int | None = None
+
+
+class AdminMeOut(BaseModel):
+    """Admin o‘z biznesini ko‘radi. `slug`/`is_active` ko‘rinadi (read-only), token/hash chiqmaydi."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    logo_url: str | None
+    phone: str | None
+    telegram_username: str | None
+    whatsapp: str | None
+    instagram: str | None
+    address: str | None
+    description: str | None
+    is_active: bool
+    notify_telegram_chat_id: int | None
+
+
+class AdminMeUpdate(BaseModel):
+    """Admin o‘zi o‘zgartira oladigan maydonlar.
+
+    `slug`, `is_active`, token/hash bu yerda yo‘q — `extra="forbid"` tufayli ularni
+    yuborishga urinish 422 bilan rad etiladi.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(default=None, min_length=2, max_length=160)
+    logo_url: str | None = Field(default=None, max_length=500)
+    phone: str | None = Field(default=None, max_length=40)
+    telegram_username: str | None = Field(default=None, max_length=80)
+    whatsapp: str | None = Field(default=None, max_length=40)
+    instagram: str | None = Field(default=None, max_length=80)
+    address: str | None = Field(default=None, max_length=300)
+    description: str | None = None
+    notify_telegram_chat_id: int | None = None
 
 
 class SourceCount(BaseModel):

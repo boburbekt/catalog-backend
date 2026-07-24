@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_token
 from app.models import Business, Category, Product
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ async def seed_demo(session: AsyncSession) -> None:
     business = Business(
         name="Demo Mebel",
         slug="demo-mebel",
-        admin_token=DEMO_ADMIN_TOKEN,
+        admin_token_hash=hash_token(DEMO_ADMIN_TOKEN),
         phone="+998 90 123 45 67",
         telegram_username="demo_mebel",
         address="Farg‘ona shahri",

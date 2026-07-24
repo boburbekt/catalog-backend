@@ -18,6 +18,8 @@ from app.services.images import (
     save_webp,
 )
 from app.schemas.catalog import (
+    AdminMeOut,
+    AdminMeUpdate,
     AdminProductCreate,
     AdminProductUpdate,
     CategoryCreate,
@@ -37,6 +39,33 @@ _DUPLICATE_SLUG = "Bu slug allaqachon mavjud"
 _ORDER_HISTORY = "Bu mahsulotda buyurtma tarixi mavjud. Uni o‘chirish o‘rniga yashiring."
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+@router.get("/me", response_model=AdminMeOut)
+async def get_me(
+    business: Business = Depends(get_current_business),
+) -> Business:
+    """Token egasining biznes ma'lumotlari. Token/hash javobda chiqmaydi."""
+    return business
+
+
+@router.patch("/me", response_model=AdminMeOut)
+async def update_me(
+    payload: AdminMeUpdate,
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> Business:
+    """Admin o‘z biznesining tahrirlashga ruxsat etilgan maydonlarini yangilaydi.
+
+    `slug`, `is_active`, token/hash `AdminMeUpdate` da yo‘q — ularni yuborishga urinish
+    422 bilan rad etiladi. Tenant faqat token orqali aniqlanadi.
+    """
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(business, field, value)
+    await db.commit()
+    await db.refresh(business)
+    return business
 
 
 @router.get("/products", response_model=list[ProductOut])

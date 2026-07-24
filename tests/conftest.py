@@ -5,6 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+from app.core.security import hash_token
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
@@ -48,8 +49,9 @@ async def shops(db):
 
     `alfa` da bitta ko‘rinadigan va bitta yashirin mahsulot, `beta` da bitta mahsulot bor.
     """
-    alfa = Business(name="Alfa Mebel", slug="alfa-mebel", admin_token="alfa-token")
-    beta = Business(name="Beta Mebel", slug="beta-mebel", admin_token="beta-token")
+    # Bazada faqat hash saqlanadi; testlar xom "alfa-token"/"beta-token" ni header sifatida yuboradi.
+    alfa = Business(name="Alfa Mebel", slug="alfa-mebel", admin_token_hash=hash_token("alfa-token"))
+    beta = Business(name="Beta Mebel", slug="beta-mebel", admin_token_hash=hash_token("beta-token"))
     db.add_all([alfa, beta])
     await db.flush()
 

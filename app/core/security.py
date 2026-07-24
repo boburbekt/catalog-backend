@@ -1,3 +1,4 @@
+import hashlib
 import secrets
 
 from fastapi import Depends, Header, HTTPException, status
@@ -10,14 +11,24 @@ from app.models import Business
 
 
 def generate_admin_token() -> str:
+    """Foydalanuvchiga bir marta ko‘rsatiladigan xom token (URL-safe, ~43 belgi)."""
     return secrets.token_urlsafe(32)
+
+
+def hash_token(raw: str) -> str:
+    """Xom tokenni SHA-256 hex hashiga aylantiradi (64 belgi). Bir tomonlama."""
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 async def get_current_business(
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
     db: AsyncSession = Depends(get_db),
 ) -> Business:
-    """Admin tokenidan tenantni aniqlaydi. Tenant hech qachon so‘rov tanasidan olinmaydi."""
+    """Admin tokenidan tenantni aniqlaydi. Tenant hech qachon so‘rov tanasidan olinmaydi.
+
+    Kelgan xom token hash qilinib, DB dagi `admin_token_hash` bilan solishtiriladi —
+    xom token bazada saqlanmaydi.
+    """
     if not x_admin_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -26,7 +37,7 @@ async def get_current_business(
 
     business = await db.scalar(
         select(Business).where(
-            Business.admin_token == x_admin_token,
+            Business.admin_token_hash == hash_token(x_admin_token),
             Business.is_active.is_(True),
         )
     )

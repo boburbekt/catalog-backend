@@ -65,7 +65,8 @@ class Business(TimestampMixin, Base):
     address: Mapped[str | None] = mapped_column(String(300))
     description: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    admin_token: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
+    # Raw token hech qachon saqlanmaydi — faqat uning SHA-256 hex hashi (64 belgi).
+    admin_token_hash: Mapped[str | None] = mapped_column(String(64), unique=True, index=True)
     notify_telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger)
 
     categories: Mapped[list["Category"]] = relationship(back_populates="business", cascade="all, delete-orphan")
