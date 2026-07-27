@@ -187,6 +187,21 @@ class AdminProductUpdate(BaseModel):
     is_visible: bool = Field(default=None)
 
 
+class ImportRowError(BaseModel):
+    """Import paytida bitta qatorning xatosi. `row` — Excel'dagi haqiqiy qator raqami."""
+
+    row: int
+    message: str
+
+
+class ImportResult(BaseModel):
+    """Ommaviy import natijasi: nechta yaratildi, nechta o‘tkazib yuborildi, xatolar ro‘yxati."""
+
+    created: int
+    skipped: int
+    errors: list[ImportRowError]
+
+
 _CATEGORY_SLUG = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 
 

@@ -13,7 +13,8 @@ dependencies = [
   "alembic==1.18.5",
   "httpx>=0.28,<1",
   "segno>=1.6,<2",
-  "pillow>=11,<12"
+  "pillow>=11,<12",
+  "openpyxl>=3.1,<4"
 ]
 
 [project.optional-dependencies]

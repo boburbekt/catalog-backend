@@ -8,14 +8,27 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.security import get_current_business
+from app.core.slugify import slugify, unique_slug
 from app.db.session import get_db
-from app.models import Business, CatalogVisit, Category, Order, OrderItem, OrderStatus, Product
+from app.models import Availability, Business, CatalogVisit, Category, Order, OrderItem, OrderStatus, Product
 from app.services.images import (
     ALLOWED_CONTENT_TYPES,
     InvalidImageError,
     build_webp,
     remove_local_image,
     save_webp,
+)
+from app.services.product_import import (
+    MAX_IMPORT_BYTES,
+    MAX_IMPORT_ROWS,
+    XLSX_MAGIC,
+    RowError,
+    build_template_workbook,
+    cell_str,
+    is_blank,
+    load_rows,
+    parse_amount,
+    parse_availability,
 )
 from app.schemas.catalog import (
     AdminMeOut,
@@ -27,6 +40,8 @@ from app.schemas.catalog import (
     CategoryOut,
     CategoryUpdate,
     DayStat,
+    ImportResult,
+    ImportRowError,
     OrderListOut,
     OrderOut,
     OrderStatusUpdate,
@@ -35,6 +50,8 @@ from app.schemas.catalog import (
     StatsOut,
     TopProduct,
 )
+
+_XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 _DUPLICATE_SLUG = "Bu slug allaqachon mavjud"
 _ORDER_HISTORY = "Bu mahsulotda buyurtma tarixi mavjud. Uni o‘chirish o‘rniga yashiring."
@@ -258,6 +275,168 @@ async def upload_product_image(
 
     query = select(Product).options(selectinload(Product.category)).where(Product.id == product.id)
     return await db.scalar(query)  # type: ignore[return-value]
+
+
+@router.get("/products/import/template")
+async def download_import_template(
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Import uchun tayyor .xlsx shablonni qaytaradi.
+
+    Kategoriya ustuniga shu do‘konning faol kategoriyalaridan dropdown qo‘yiladi (bo‘lsa).
+    """
+    category_names = list(
+        (
+            await db.scalars(
+                select(Category.name)
+                .where(Category.business_id == business.id, Category.is_active.is_(True))
+                .order_by(Category.position, Category.id)
+            )
+        ).all()
+    )
+    content = build_template_workbook(category_names)
+    return Response(
+        content=content,
+        media_type=_XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": 'attachment; filename="mahsulotlar-shablon.xlsx"'},
+    )
+
+
+@router.post("/products/import", response_model=ImportResult)
+async def import_products(
+    file: UploadFile = File(...),
+    business: Business = Depends(get_current_business),
+    db: AsyncSession = Depends(get_db),
+) -> ImportResult:
+    """Excel (.xlsx) faylidan mahsulotlarni ommaviy import qiladi.
+
+    Har bir qator alohida validatsiya qilinadi: bitta xato qator qolganini to‘xtatmaydi
+    (partial success). Faqat valid qatorlar bitta tranzaksiyada saqlanadi; xato qatorlar
+    hisobotga tushadi. Yozish faqat token orqali aniqlangan `business_id` ga — hech qachon
+    fayldan olingan id'ga emas.
+    """
+    # Hajmni faqat `max + 1` gacha o‘qiymiz — chegaradan oshsa xotirani to‘ldirmasdan rad etamiz.
+    data = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(data) > MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413, detail="Fayl hajmi 5 MB dan oshmasligi kerak"
+        )
+    # Magic bytes: xlsx = ZIP (PK\x03\x04). content-type'ga yolg‘iz ishonmaymiz.
+    if not data.startswith(XLSX_MAGIC):
+        raise HTTPException(
+            status_code=422, detail="Fayl .xlsx (Excel) formatida bo‘lishi kerak"
+        )
+    try:
+        rows = load_rows(data)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Excel faylni o‘qib bo‘lmadi")
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Faylda {MAX_IMPORT_ROWS} tadan ortiq mahsulot bo‘lmasligi kerak",
+        )
+
+    # Shu biznes ichidagi mavjud slug'lar va kategoriyalarni oldindan yuklaymiz (cross-tenant emas).
+    product_slugs = set(
+        (await db.scalars(select(Product.slug).where(Product.business_id == business.id))).all()
+    )
+    category_slugs = set(
+        (await db.scalars(select(Category.slug).where(Category.business_id == business.id))).all()
+    )
+    categories = {
+        category.name.strip().lower(): category
+        for category in (
+            await db.scalars(select(Category).where(Category.business_id == business.id))
+        ).all()
+    }
+    max_position = await db.scalar(
+        select(func.max(Product.position)).where(Product.business_id == business.id)
+    )
+    next_position = (max_position or 0) + 1
+
+    created = 0
+    errors: list[ImportRowError] = []
+
+    for excel_row, cells in rows:
+        try:
+            name = cell_str(cells[0])
+            if not name:
+                raise RowError("Nomi majburiy")
+
+            # Narx/eski narxni kategoriya yaratishdan OLDIN tekshiramiz — xato qatorda
+            # yetim kategoriya paydo bo‘lmasligi uchun.
+            if is_blank(cells[2]):
+                raise RowError("Narx majburiy")
+            try:
+                price = parse_amount(cells[2])
+            except ValueError:
+                raise RowError("Narx noto‘g‘ri formatda")
+            if price is None or price <= 0:
+                raise RowError("Narx 0 dan katta bo‘lishi kerak")
+
+            old_price = None
+            if not is_blank(cells[3]):
+                try:
+                    old_price = parse_amount(cells[3])
+                except ValueError:
+                    raise RowError("Eski narx noto‘g‘ri formatda")
+                if old_price is not None and old_price <= price:
+                    raise RowError("Eski narx joriy narxdan katta bo‘lishi kerak")
+
+            availability: Availability = parse_availability(cells[9])
+
+            # Kategoriya: shu biznes ichida case-insensitive qidiriladi; topilmasa yaratiladi.
+            category_id = None
+            category_name = cell_str(cells[1])
+            if category_name:
+                key = category_name.lower()
+                category = categories.get(key)
+                if category is None:
+                    category = Category(
+                        business_id=business.id,
+                        name=category_name,
+                        slug=unique_slug(slugify(category_name), category_slugs),
+                        is_active=True,
+                    )
+                    category_slugs.add(category.slug)
+                    db.add(category)
+                    await db.flush()  # id kerak — mahsulotga biriktirish uchun
+                    categories[key] = category
+                category_id = category.id
+
+            slug = unique_slug(slugify(name), product_slugs)
+            product_slugs.add(slug)
+
+            db.add(
+                Product(
+                    business_id=business.id,
+                    category_id=category_id,
+                    name=name,
+                    slug=slug,
+                    description=cell_str(cells[4]) or None,
+                    price=price,
+                    old_price=old_price,
+                    material=cell_str(cells[5]) or None,
+                    dimensions=cell_str(cells[6]) or None,
+                    color=cell_str(cells[7]) or None,
+                    sku=cell_str(cells[8]) or None,
+                    availability=availability,
+                    position=next_position,
+                )
+            )
+            next_position += 1
+            created += 1
+        except RowError as exc:
+            errors.append(ImportRowError(row=excel_row, message=f"{excel_row}-qator: {exc}"))
+
+    try:
+        await db.commit()
+    except SQLAlchemyError:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Importni saqlab bo‘lmadi")
+
+    return ImportResult(created=created, skipped=len(errors), errors=errors)
 
 
 @router.get("/categories", response_model=list[CategoryOut])
