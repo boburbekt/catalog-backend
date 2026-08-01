@@ -1,10 +1,24 @@
 # Mebel Catalog API
 
-Ko‘p ijarali (multi-tenant) mebel katalogi uchun backend.
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
+![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy_2-D71F00?style=flat-square)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-16_suites-success?style=flat-square)
 
-- FastAPI + SQLAlchemy 2 (async) + PostgreSQL
-- Public katalog API + token bilan himoyalangan admin API + super admin API
-- Frontend alohida repoda: [catalog-frontend](https://github.com/boburbekt/catalog-frontend)
+Multi-tenant backend for a furniture catalog platform. Each business gets its own storefront slug, admin token and QR code; customers browse and place orders without signing up, and shop owners get instant Telegram notifications.
+
+**Highlights**
+- 🏢 Multi-tenant isolation via per-business admin tokens
+- 🛡️ Anti-spam: honeypot field + per-IP rate limiting on orders
+- 📊 Visit analytics and per-day order stats
+- 📥 Bulk product import + image upload pipeline
+- 📱 QR code generation (PNG / SVG) for offline-to-online traffic
+- ✅ 16 test suites running on in-memory SQLite — no external deps
+- 🐳 One-command local setup with Docker Compose
+
+**Frontend:** [catalog-frontend](https://github.com/boburbekt/catalog-frontend)
 
 ## 1. Lokal ishga tushirish (Docker)
 
