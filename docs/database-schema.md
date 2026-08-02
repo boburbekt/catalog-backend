@@ -62,10 +62,10 @@ erDiagram
     }
 ```
 
-## Multi-tenant cheklovlar
+## Multi-tenant constraints
 
-- `businesses.slug` global unique.
+- `businesses.slug` is globally unique.
 - `categories`: `UNIQUE(business_id, slug)`.
 - `products`: `UNIQUE(business_id, slug)`.
-- Public va admin so‘rovlari doimo `business_id` yoki biznes `slug` orqali cheklanadi.
-- Keyingi bosqichda admin foydalanuvchi tokenidagi `business_id` bilan barcha CRUD so‘rovlari tekshiriladi.
+- Public and admin requests are always scoped by `business_id` or the business `slug`.
+- In the next stage, all CRUD requests will be verified against the `business_id` from the admin user's token.
