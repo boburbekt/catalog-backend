@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 
-# Sxema faqat shu yerda o‘zgaradi — ilova ichida create_all yo‘q.
-echo "Migratsiyalar qo‘llanmoqda…"
+# The schema changes only here — there is no create_all inside the app.
+echo "Applying migrations…"
 alembic upgrade head
 
 exec "$@"
