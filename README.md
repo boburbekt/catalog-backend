@@ -1,11 +1,6 @@
 # Mebel Catalog API
 
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white)
-![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy_2-D71F00?style=flat-square)
-![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-16_suites-success?style=flat-square)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat-square&logo=fastapi&logoColor=white) ![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white) ![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy_2-D71F00?style=flat-square) ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white) ![Tests](https://img.shields.io/badge/tests-16_suites-success?style=flat-square)
 
 Multi-tenant backend for a furniture catalog platform. Each business gets its own storefront slug, admin token and QR code; customers browse and place orders without signing up, and shop owners get instant Telegram notifications.
 
@@ -20,10 +15,10 @@ Multi-tenant backend for a furniture catalog platform. Each business gets its ow
 
 **Frontend:** [catalog-frontend](https://github.com/boburbekt/catalog-frontend)
 
-## 1. Lokal ishga tushirish (Docker)
+## 1. Running locally (Docker)
 
 ```bash
-cp .env.example .env     # ixtiyoriy — barcha qiymatlarning defaulti bor
+cp .env.example .env     # optional — every value has a default
 docker compose up --build
 ```
 
@@ -31,119 +26,113 @@ docker compose up --build
 - API docs: http://localhost:8000/docs
 - PostgreSQL: localhost:5432
 
-Backend `dev` muhitida ishga tushganda `demo-mebel` do‘koni uchun demo ma’lumotlarni kiritadi
-(admin token: `demo-admin-token`).
+When started in the dev environment, the backend seeds demo data for the demo-mebel shop (admin token: demo-admin-token).
 
-## 2. Lokal ishga tushirish (Docker'siz)
+> These credentials are for local development only — never use them in production.
 
-PostgreSQL alohida ishlab turgan bo‘lsa:
+## 2. Running locally (without Docker)
+
+If you already have PostgreSQL running:
 
 ```bash
 pip install -e ".[dev]"     # dev = pytest, pytest-asyncio, aiosqlite
 export DATABASE_URL=postgresql+asyncpg://catalog:catalog_password@localhost:5432/mebel_catalog
-alembic upgrade head        # sxemani migratsiyalar orqali yaratadi
+alembic upgrade head        # creates the schema through migrations
 uvicorn app.main:app --reload
 ```
 
-Testlar (xotiradagi SQLite, tashqi bog‘liqliksiz):
+Tests (in-memory SQLite, no external dependencies):
 
 ```bash
 python -m pytest -q
 python -m compileall app
 ```
 
-## 3. Muhit o‘zgaruvchilari
+## 3. Environment variables
 
-| O‘zgaruvchi | Default | Izoh |
+| Variable | Default | Notes |
 | --- | --- | --- |
-| `ENVIRONMENT` | `dev` | `dev` da demo seed ishlaydi |
-| `DATABASE_URL` | `postgresql+asyncpg://catalog:catalog_password@db:5432/mebel_catalog` | asyncpg drayveri majburiy |
-| `CORS_ORIGINS` | `http://localhost:3000` | vergul bilan ajratilgan ro‘yxat |
-| `PUBLIC_SITE_URL` | `http://localhost:3000` | QR/havolalar shu manzilga ishora qiladi |
-| `TELEGRAM_BOT_TOKEN` | (bo‘sh) | bo‘sh bo‘lsa bildirishnoma yuborilmaydi (buyurtma baribir saqlanadi) |
-| `SUPER_ADMIN_TOKEN` | (bo‘sh) | `/api/super/*` uchun; bo‘sh bo‘lsa endpoint hamma uchun yopiq |
-| `UPLOAD_DIR` | `uploads` | yuklangan rasmlar papkasi |
-| `MAX_UPLOAD_MB` | `8` | bitta rasm uchun maksimal hajm |
-| `ORDER_RATE_LIMIT_PER_MINUTE` | `5` | bitta IP daqiqasiga nechta buyurtma bera oladi (anti-spam) |
-| `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` | `mebel_catalog` / `catalog` / `catalog_password` | faqat compose'dagi `db` servisi uchun |
+| ENVIRONMENT | dev | demo seed runs in dev |
+| DATABASE_URL | postgresql+asyncpg://catalog:catalog_password@db:5432/mebel_catalog | the asyncpg driver is required |
+| CORS_ORIGINS | http://localhost:3000 | comma-separated list |
+| PUBLIC_SITE_URL | http://localhost:3000 | QR codes and links point here |
+| TELEGRAM_BOT_TOKEN | (empty) | if empty, no notification is sent (the order is still stored) |
+| SUPER_ADMIN_TOKEN | (empty) | for /api/super/*; if empty, the endpoints are closed to everyone |
+| UPLOAD_DIR | uploads | directory for uploaded images |
+| MAX_UPLOAD_MB | 8 | maximum size per image |
+| ORDER_RATE_LIMIT_PER_MINUTE | 5 | how many orders a single IP may place per minute (anti-spam) |
+| POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD | mebel_catalog / catalog / catalog_password | only for the db service in compose |
 
 ## 4. API
 
-**Public (katalog):**
+**Public (catalog):**
 
-| Metod | Yo‘l | Izoh |
+| Method | Path | Notes |
 | --- | --- | --- |
-| `GET` | `/api/public/shops/{shop_slug}` | do‘kon + kategoriyalar + mahsulotlar (`?category=`, `?search=`, `?limit=`, `?offset=`) |
-| `GET` | `/api/public/shops/{shop_slug}/products/{product_slug}` | mahsulot tafsiloti |
-| `POST` | `/api/public/shops/{shop_slug}/visits` | tashrif eventi (statistika); GET so‘rovlari tashrif yozmaydi |
-| `POST` | `/api/public/shops/{shop_slug}/orders` | buyurtma (`consent: true` majburiy, honeypot + IP rate-limit) |
-| `GET` | `/api/public/sitemap` | SEO: faol do‘kon va ko‘rinadigan mahsulot slug'lari + `updated_at` |
+| GET | /api/public/shops/{shop_slug} | shop + categories + products (?category=, ?search=, ?limit=, ?offset=) |
+| GET | /api/public/shops/{shop_slug}/products/{product_slug} | product detail |
+| POST | /api/public/shops/{shop_slug}/visits | visit event for analytics; GET requests do not record visits |
+| POST | /api/public/shops/{shop_slug}/orders | place an order (consent: true required, honeypot + IP rate limit) |
+| GET | /api/public/sitemap | SEO: slugs of active shops and visible products with updated_at |
 
-**Admin (X-Admin-Token header, tenant token orqali aniqlanadi):**
+**Admin (X-Admin-Token header — the tenant is resolved from the token):**
 
-| Metod | Yo‘l | Izoh |
+| Method | Path | Notes |
 | --- | --- | --- |
-| `GET/PATCH` | `/api/admin/me` | biznes self-service (slug/is_active/token o‘zgartirilmaydi) |
-| `GET/POST/PATCH/DELETE` | `/api/admin/products[...]` | mahsulotlar CRUD + `/{id}/image` yuklash |
-| `GET/POST/PATCH/DELETE` | `/api/admin/categories[...]` | kategoriyalar CRUD |
-| `GET/PATCH` | `/api/admin/orders[...]` | buyurtmalar ro‘yxati + holat |
-| `GET` | `/api/admin/stats` | statistika (`total_products`, `new_orders`, `by_day`, ...) |
-| `GET` | `/api/admin/qr[.svg]` | QR kod |
+| GET/PATCH | /api/admin/me | business self-service (slug / is_active / token cannot be changed) |
+| GET/POST/PATCH/DELETE | /api/admin/products[...] | product CRUD + /{id}/image upload |
+| GET/POST/PATCH/DELETE | /api/admin/categories[...] | category CRUD |
+| GET/PATCH | /api/admin/orders[...] | order list + status updates |
+| GET | /api/admin/stats | statistics (total_products, new_orders, by_day, ...) |
+| GET | /api/admin/qr[.svg] | QR code |
 
 **Super admin (X-Super-Token header):**
 
-| Metod | Yo‘l | Izoh |
+| Method | Path | Notes |
 | --- | --- | --- |
-| `GET/POST` | `/api/super/businesses` | ro‘yxat / yangi biznes (yaratishda xom token bir marta qaytadi) |
-| `PATCH` | `/api/super/businesses/{id}` | biznesni tahrirlash (dublikat slug → 409) |
-| `POST` | `/api/super/businesses/{id}/rotate-token` | tokenni yangilash (eski token darhol ishlamay qoladi) |
+| GET/POST | /api/super/businesses | list / create a business (the raw token is returned once on creation) |
+| PATCH | /api/super/businesses/{id} | edit a business (duplicate slug → 409) |
+| POST | /api/super/businesses/{id}/rotate-token | rotate the token (the old one stops working immediately) |
 
-`GET /health` — healthcheck.
+GET /health — healthcheck.
 
-## 5. Ma’lumotlar bazasi va migratsiyalar
+## 5. Database and migrations
 
-Sxema: [`docs/database-schema.md`](docs/database-schema.md).
+Schema: [docs/database-schema.md](docs/database-schema.md).
 
-Sxema **Alembic** orqali boshqariladi (startupda `create_all` ishlatilmaydi):
+The schema is managed with **Alembic** (create_all is not used at startup):
 
 ```bash
-alembic upgrade head        # eng so‘nggi holatga
-alembic downgrade -1        # bitta migratsiya orqaga
-alembic revision --autogenerate -m "xabar"   # model o‘zgargach yangi migratsiya
+alembic upgrade head        # migrate to the latest revision
+alembic downgrade -1        # roll back one migration
+alembic revision --autogenerate -m "message"   # new migration after a model change
 ```
 
-Docker konteyneri startda `alembic upgrade head` ni ishga tushiradi (`docker-entrypoint.sh`).
+The Docker container runs alembic upgrade head on startup (docker-entrypoint.sh).
 
-## 6. Rasm yuklash (upload storage)
+## 6. Image uploads
 
-Rasmlar `POST /api/admin/products/{id}/image` orqali yuklanadi: fayl WebP ga o‘tkaziladi va
-`UPLOAD_DIR` ostida `{business_id}/...webp` sifatida saqlanadi, `/uploads/...` orqali beriladi.
-Hozircha **lokal disk** ishlatiladi (S3 emas); Docker'da papka volume bilan saqlanadi.
+Images are uploaded through POST /api/admin/products/{id}/image: the file is converted to WebP and stored under UPLOAD_DIR as {business_id}/...webp, then served from /uploads/.... For now this uses the **local disk** (not S3); in Docker the directory is kept in a volume.
 
-## 7. Admin token xavfsizligi va rotate
+## 7. Admin token security and rotation
 
-Admin token bazada **plaintext saqlanmaydi** — faqat SHA-256 hash (`admin_token_hash`). Xom token
-faqat ikki joyda bir marta qaytadi: biznes yaratishda va `rotate-token` javobida. Kelgan token
-hash qilinib solishtiriladi.
+Admin tokens are **never stored in plaintext** — only a SHA-256 hash (admin_token_hash). The raw token is returned exactly once, in two places: when a business is created, and in the rotate-token response. Incoming tokens are hashed and compared against the stored hash.
 
 ```bash
-# tokenni yangilash (eski token darhol 401 bo‘ladi)
+# rotate the token (the old one returns 401 immediately)
 curl -X POST -H "X-Super-Token: $SUPER_ADMIN_TOKEN" \
   http://localhost:8000/api/super/businesses/1/rotate-token
 ```
 
-## 8. Muhim arxitektura qoidasi
+## 8. Key architectural rule
 
-Barcha biznesga tegishli obyektlarda `business_id` mavjud va do‘kon har doim URL'dagi `slug`
-orqali aniqlanadi. Yangi endpoint qo‘shganda so‘rovni albatta `business_id` bo‘yicha cheklang.
+Every business-owned entity carries a business_id, and the shop is always resolved from the slug in the URL. When adding a new endpoint, always scope the query by business_id.
 
-## 9. Anti-spam (buyurtma tezligi cheklovi)
+## 9. Anti-spam (order rate limiting)
 
-Buyurtma endpointi oddiy **in-process** (jarayon ichidagi) rate limiter bilan himoyalangan: bitta IP
-uchun `ORDER_RATE_LIMIT_PER_MINUTE` (default 5) dan ko‘p buyurtma bo‘lsa `429` qaytadi. Bundan tashqari
-so‘rovda majburiy `consent: true` va yashirin **honeypot** maydoni tekshiriladi (bot to‘ldirsa `400`).
+The order endpoint is protected by a simple **in-process** rate limiter: if a single IP exceeds ORDER_RATE_LIMIT_PER_MINUTE (default 5), the request returns 429. Requests must also carry consent: true and pass a hidden **honeypot** field check (filled in by a bot → 400).
 
-> ⚠️ **Bir jarayon cheklovi.** Limiter holati faqat shu Python jarayonining xotirasida saqlanadi.
-> Bir nechta uvicorn worker yoki replika ishlatilsa, har biri o‘z hisobini yuritadi va cheklov global
-> bo‘lmaydi. Ishonchli, taqsimlangan cheklov uchun Redis kabi umumiy do‘kon kerak (MVP doirasida
-> ataylab qo‘shilmagan).
+> ⚠️ **Single-process limitation.** The limiter state lives only in the memory of one Python
+> process. With multiple uvicorn workers or replicas, each keeps its own counters and the limit
+> is not global. A reliable distributed limit needs shared storage such as Redis — deliberately
+> left out of the MVP scope.
