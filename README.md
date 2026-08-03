@@ -15,6 +15,9 @@ Multi-tenant backend for a furniture catalog platform. Each business gets its ow
 
 **Frontend:** [catalog-frontend](https://github.com/boburbekt/catalog-frontend)
 
+> 📸 Screenshots of the client that consumes this API are in the
+> [catalog-frontend](https://github.com/boburbekt/catalog-frontend#screenshots) repo.
+
 ## 1. Running locally (Docker)
 
 ```bash
